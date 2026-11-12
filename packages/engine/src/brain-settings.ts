@@ -568,7 +568,7 @@ async function settingsAgent(db: Database, agent: Agent, userId: string, account
       and(
         eq(schema.machines.orgId, agent.orgId),
         isNull(schema.machines.deletedAt),
-        sql`(${schema.machines.kind} = 'managed' or ${schema.machines.kind} = 'host' or ${schema.machines.pairedByUserId} = ${userId})`,
+        sql`(${schema.machines.aiAccountsShared} or ${schema.machines.pairedByUserId} = ${userId})`,
       ),
     )
     .orderBy(sql`${schema.machines.kind} = 'managed' desc`, schema.machines.createdAt)
@@ -1847,12 +1847,12 @@ export async function listAiAccounts(deps: BrainDeps, userId: string, orgId: str
       machineId: machine.id,
       kind: machine.kind,
       online: machineOnline(machine),
-      sharedComputer: machine.kind === "host" || machine.pairedByUserId === null,
+      sharedComputer: machine.aiAccountsShared,
       pairedByCaller: machine.pairedByUserId === userId,
       runnerProtocol: machine.protocol,
       accountsSupported: machine.protocol >= ACCOUNTS_PROTOCOL,
       canAdd: mayAddAccounts(machine, userId) && machine.protocol >= ACCOUNTS_PROTOCOL,
-      ...(machine.kind !== "host" && machine.pairedByUserId !== null && machine.pairedByUserId !== userId
+      ...(!mayAddAccounts(machine, userId)
         ? { unavailableReason: "paired_to_another_member" }
         : machine.protocol < ACCOUNTS_PROTOCOL
           ? { unavailableReason: "runner_accounts_protocol_too_old" }

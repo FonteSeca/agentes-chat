@@ -100,6 +100,7 @@ export interface ComputerDevice {
   memoryGb: number | null;
   ownerUserId: string | null;
   belongsToWorkspace: boolean;
+  aiAccountsShared: boolean;
   /** Each agent works as its own OS user there (a server install). */
   systemMode: boolean;
   audience: DeviceAudience;
@@ -423,6 +424,7 @@ export async function listDevices(
       memoryGb: m.size?.memoryGb ?? null,
       ownerUserId: m.pairedByUserId,
       belongsToWorkspace: m.belongsToWorkspace,
+      aiAccountsShared: m.aiAccountsShared,
       systemMode: m.executors?.mode === "system",
       audience: rule.audience,
       status: computerStatus(m, busy.get(m.id) ?? 0, now),
@@ -534,6 +536,7 @@ export interface ComputerDeviceInput {
   name?: string;
   audience?: DeviceAudience;
   belongsToWorkspace?: boolean;
+  aiAccountsShared?: boolean;
 }
 
 /**
@@ -569,6 +572,7 @@ export async function updateComputerDevice(
     Object.assign(set, { audienceMode: next.mode, audienceUserIds: next.userIds, audienceRoleIds: next.roleIds });
   }
   if (input.belongsToWorkspace !== undefined) set.belongsToWorkspace = input.belongsToWorkspace;
+  if (input.aiAccountsShared !== undefined) set.aiAccountsShared = input.aiAccountsShared;
   if (Object.keys(set).length > 0) {
     await deps.db
       .update(machines)
@@ -582,6 +586,9 @@ export async function updateComputerDevice(
       details: { ...set },
     });
     if (set.name) await publishMachineUpdated(deps.pubsub, orgId, machine.id, { name: set.name });
+    if (set.aiAccountsShared !== undefined) {
+      await publishMachineUpdated(deps.pubsub, orgId, machine.id, { accounts: true });
+    }
     await publishDevicesChanged(deps.pubsub, orgId);
   }
   return deviceOf(deps.db, actorId, orgId, machine.id);

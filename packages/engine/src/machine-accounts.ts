@@ -964,13 +964,13 @@ export async function getListedAccount(db: Executor, orgId: string, machineId: s
 // ── Who may ─────────────────────────────────────────────────────────────────
 
 /**
- * Who adds accounts to a computer: any member on a workspace-owned shared
- * computer (the Cloud's or this server's own), or the person who connected a
- * personal computer. A host computer is pinned to the server owner for its
- * lifecycle, but is shared by the workspace for AI sign-ins.
+ * Who adds accounts to a computer: any member when its AI accounts are shared,
+ * or the person who connected it. A host computer is pinned to the server
+ * owner for its lifecycle, but its sharing setting can allow every member to
+ * connect their own plan.
  */
-export const mayAddAccounts = (machine: Pick<MachineRow, "kind" | "pairedByUserId">, userId: string) =>
-  machine.kind === "host" || machine.pairedByUserId === null || machine.pairedByUserId === userId;
+export const mayAddAccounts = (machine: Pick<MachineRow, "aiAccountsShared" | "pairedByUserId">, userId: string) =>
+  machine.aiAccountsShared || machine.pairedByUserId === userId;
 
 /** A member and the machine of the organization. */
 async function memberMachine(db: Database, userId: string, orgId: string, machineId: string) {
@@ -1123,7 +1123,7 @@ export async function beginAccountLogin(
     machineKind: machine.kind,
     accountKind: kind,
     ...(provider ? { provider } : {}),
-    sharedComputer: machine.pairedByUserId === null,
+    sharedComputer: machine.aiAccountsShared,
     pairedByCaller: machine.pairedByUserId === userId,
     runnerProtocol: machine.protocol,
     ...(accountId ? { existingAccount: true } : { existingAccount: false }),

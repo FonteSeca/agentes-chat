@@ -13740,6 +13740,8 @@ export const ptBR = {
     notFound: "Este dispositivo não está mais aqui",
     notFoundText: "Ele foi removido, ou este link está errado.",
     sharing: "Compartilhamento",
+    aiAccountsShared: "Permitir que membros conectem planos de IA",
+    aiAccountsSharedHint: "Cada pessoa conecta o próprio plano. Isso não altera quem pode usar o computador ou acessar os arquivos.",
     phonesHere: "Celulares neste computador",
     maxTasks: "Tarefas ao mesmo tempo",
     maxTasksHint: "Quantas tarefas em segundo plano os agentes rodam aqui ao mesmo tempo. As outras esperam a vez.",

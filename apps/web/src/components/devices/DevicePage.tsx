@@ -388,6 +388,20 @@ function ComputerPage({ machineId }: { machineId: string }) {
             hint={t("devices.who.computerHint")}
             onChange={(audience: DeviceAudience) => save({ id: d.id, audience })}
           />
+          <PrefRow
+            id="dv-pc-ai-accounts"
+            icon="key"
+            label={t("devices.aiAccountsShared")}
+            hint={t("devices.aiAccountsSharedHint")}
+            control={
+              <Switch
+                id="dv-pc-ai-accounts-switch"
+                checked={d.aiAccountsShared}
+                disabled={!d.mayManage || update.isPending}
+                onCheckedChange={(on) => save({ id: d.id, aiAccountsShared: on })}
+              />
+            }
+          />
           {/* Only once the computer says its limit: a guess here would be a setting that changes nothing. */}
           {d.maxTasks !== null && (
             <PrefRow

@@ -7655,6 +7655,7 @@ export interface ComputerDevice {
   memoryGb: number | null;
   ownerUserId: string | null;
   belongsToWorkspace: boolean;
+  aiAccountsShared: boolean;
   systemMode: boolean;
   audience: DeviceAudience;
   status: DeviceStatus;
@@ -7746,6 +7747,7 @@ export interface ComputerDeviceInput {
   name?: string;
   audience?: DeviceAudience;
   belongsToWorkspace?: boolean;
+  aiAccountsShared?: boolean;
   maxTasks?: number;
 }
 

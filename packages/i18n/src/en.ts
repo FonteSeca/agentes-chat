@@ -13715,6 +13715,8 @@ export const en = {
     notFound: "This device isn't here anymore",
     notFoundText: "It was removed, or this link is wrong.",
     sharing: "Sharing",
+    aiAccountsShared: "Let workspace members connect AI plans",
+    aiAccountsSharedHint: "Each person signs in with their own plan. This does not change who can use the computer or its files.",
     phonesHere: "Phones on this computer",
     maxTasks: "Tasks at once",
     maxTasksHint: "How many background tasks agents run here at the same time. The rest wait their turn.",

@@ -267,7 +267,10 @@ test("an offline computer: no sign-in starts, renaming works, and removing leave
 test("a computer nobody connected: anyone signs in, the account is theirs from the start, its email only theirs", async () => {
   const { api, asAdmin, orgId, adminId } = await workspace();
   const box = await pairComputer(t, api, { ...RUNNER, exec: true }, { name: "box" });
-  await t.db.update(schema.machines).set({ pairedByUserId: null }).where(eq(schema.machines.id, box.machineId));
+  await t.db
+    .update(schema.machines)
+    .set({ pairedByUserId: null, aiAccountsShared: true })
+    .where(eq(schema.machines.id, box.machineId));
   const runner = fakeRunner();
   await runner.hello(box.token);
   runner.signedIn.email = "bia@example.com";
@@ -341,7 +344,7 @@ test("the server host is shared even though its pinned owner is recorded as the 
   const box = await pairComputer(t, api, { ...RUNNER, exec: true }, { name: "server" });
   await t.db
     .update(schema.machines)
-    .set({ kind: "host", pairedByUserId: ownerId })
+    .set({ kind: "host", pairedByUserId: ownerId, aiAccountsShared: true })
     .where(eq(schema.machines.id, box.machineId));
   const runner = fakeRunner();
   await runner.hello(box.token);

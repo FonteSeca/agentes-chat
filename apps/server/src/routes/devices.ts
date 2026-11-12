@@ -110,6 +110,7 @@ const Computer = z
     memoryGb: z.number().nullable(),
     ownerUserId: z.string().nullable(),
     belongsToWorkspace: z.boolean(),
+    aiAccountsShared: z.boolean(),
     systemMode: z.boolean().openapi({ description: "Each agent works as its own OS user there (a server install)." }),
     audience: Audience,
     status: Status,
@@ -244,9 +245,9 @@ export function deviceAppRoutes(deps: AppDeps) {
       path: "/organizations/{orgId}/devices/computers/{machineId}",
       tags,
       security,
-      summary: "Rename a computer, change who can use it, mark it the workspace's",
+      summary: "Configure a computer, including who can use it and share AI accounts",
       description:
-        "Its owner: anything. An admin: rename, mark it the workspace's, and narrow who can use someone's own computer (`device.widen_forbidden` otherwise). Never the workspace's computer (`machine.managed`).",
+        "Its owner: any setting. An admin: rename, mark it the workspace's, change AI account sharing, and narrow who can use someone's own computer (`device.widen_forbidden` otherwise). Never the workspace's computer (`machine.managed`).",
       request: {
         params: MachineParams,
         body: body(
@@ -254,6 +255,7 @@ export function deviceAppRoutes(deps: AppDeps) {
             name: z.string().min(1).max(80).optional(),
             audience: Audience.optional(),
             belongsToWorkspace: z.boolean().optional(),
+            aiAccountsShared: z.boolean().optional(),
           }),
         ),
       },
