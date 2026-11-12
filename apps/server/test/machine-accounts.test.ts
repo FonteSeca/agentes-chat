@@ -336,6 +336,33 @@ test("a computer nobody connected: anyone signs in, the account is theirs from t
   expect((await api(`${base}/account-logins`, { json: { kind: "claude_code", email: "x" } })).status).toBe(400);
 });
 
+test("the server host is shared even though its pinned owner is recorded as the pairer", async () => {
+  const { api, asAdmin, ownerId, adminId } = await workspace();
+  const box = await pairComputer(t, api, { ...RUNNER, exec: true }, { name: "server" });
+  await t.db
+    .update(schema.machines)
+    .set({ kind: "host", pairedByUserId: ownerId })
+    .where(eq(schema.machines.id, box.machineId));
+  const runner = fakeRunner();
+  await runner.hello(box.token);
+  const base = `/machines/${box.machineId}`;
+
+  const page = await asAdmin(`${base}/accounts`);
+  expect(page.status).toBe(200);
+  expect(await page.json()).toMatchObject({ canManage: true, supported: true });
+
+  const listed = await asAdmin("/ai-accounts");
+  expect(listed.status).toBe(200);
+  expect(await listed.json()).toMatchObject({
+    computers: [{ machineId: box.machineId, canAdd: true, mine: false, online: true }],
+  });
+
+  const begun = await asAdmin(`${base}/account-logins`, { json: { kind: "claude_code" } });
+  expect(begun.status).toBe(201);
+  const login = (await begun.json()) as { loginId: string };
+  expect(await accountRow(login.loginId)).toMatchObject({ createdBy: adminId, status: "signing_in" });
+});
+
 test("the OpenAPI document lists the account routes", async () => {
   t = await createTestServer();
   const doc = (await (await t.app.request("/api/openapi.json")).json()) as { paths: Record<string, unknown> };

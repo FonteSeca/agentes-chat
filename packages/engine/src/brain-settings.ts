@@ -506,7 +506,7 @@ async function brainAccounts(
   userId: string,
   orgId: string,
   agent: Pick<Agent, "ownerUserId" | "brainAccountId" | "builtin">,
-  machine: Pick<MachineRow, "id" | "protocol" | "pairedByUserId"> | null,
+  machine: Pick<MachineRow, "id" | "kind" | "protocol" | "pairedByUserId"> | null,
   others: boolean,
 ): Promise<BrainAccounts> {
   if (!machine) return NO_ACCOUNTS;
@@ -526,6 +526,7 @@ async function brainAccounts(
 
 interface BrainDeps {
   db: Database;
+  log?: { info(message: string, data?: Record<string, unknown>): void };
 }
 
 /**
@@ -567,7 +568,7 @@ async function settingsAgent(db: Database, agent: Agent, userId: string, account
       and(
         eq(schema.machines.orgId, agent.orgId),
         isNull(schema.machines.deletedAt),
-        sql`(${schema.machines.kind} = 'managed' or ${schema.machines.pairedByUserId} = ${userId})`,
+        sql`(${schema.machines.kind} = 'managed' or ${schema.machines.kind} = 'host' or ${schema.machines.pairedByUserId} = ${userId})`,
       ),
     )
     .orderBy(sql`${schema.machines.kind} = 'managed' desc`, schema.machines.createdAt)
@@ -588,7 +589,11 @@ async function candidateMachines(
     .from(schema.machines)
     .where(and(eq(schema.machines.orgId, orgId), isNull(schema.machines.deletedAt)));
   return rows
-    .filter((m) => (admin || m.pairedByUserId === userId || m.id === current) && (mayBeHome(m) || m.id === current))
+    .filter(
+      (m) =>
+        (admin || m.kind !== "connected" || m.pairedByUserId === userId || m.id === current) &&
+        (mayBeHome(m) || m.id === current),
+    )
     .map((m) => ({ machineId: m.id, name: m.name, online: machineOnline(m), options: brainOptions(m) }));
 }
 
@@ -1801,7 +1806,7 @@ export async function listAiAccounts(deps: BrainDeps, userId: string, orgId: str
         .map((a) => ({ ...a, machineId: m.id, computer: m.name })),
     ),
   );
-  return {
+  const view: AiAccountsView = {
     accounts: accounts.flat(),
     computers: rows.map((m) => {
       const options = brainOptions(m);
@@ -1835,6 +1840,26 @@ export async function listAiAccounts(deps: BrainDeps, userId: string, orgId: str
       };
     }),
   };
+  deps.log?.info("AI account computers listed", {
+    orgId,
+    userId,
+    computers: rows.map((machine) => ({
+      machineId: machine.id,
+      kind: machine.kind,
+      online: machineOnline(machine),
+      sharedComputer: machine.kind === "host" || machine.pairedByUserId === null,
+      pairedByCaller: machine.pairedByUserId === userId,
+      runnerProtocol: machine.protocol,
+      accountsSupported: machine.protocol >= ACCOUNTS_PROTOCOL,
+      canAdd: mayAddAccounts(machine, userId) && machine.protocol >= ACCOUNTS_PROTOCOL,
+      ...(machine.kind !== "host" && machine.pairedByUserId !== null && machine.pairedByUserId !== userId
+        ? { unavailableReason: "paired_to_another_member" }
+        : machine.protocol < ACCOUNTS_PROTOCOL
+          ? { unavailableReason: "runner_accounts_protocol_too_old" }
+          : {}),
+    })),
+  });
+  return view;
 }
 
 /** The CLIs' own sign-ins a computer reported (see `AiComputer.own`). */

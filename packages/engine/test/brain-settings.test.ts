@@ -255,6 +255,30 @@ async function world() {
 }
 
 describe("Criar agente: what a new agent could think with", () => {
+  test("a member may choose the server host and add their own plan there", async () => {
+    const { fx, deps, machineId, bia } = await world();
+    await fx.db.update(schema.machines).set({ kind: "host" }).where(eq(schema.machines.id, machineId));
+    await fx.db.update(schema.agents).set({ ownerUserId: bia.id, machineId }).where(eq(schema.agents.id, fx.agent.id));
+
+    const brain = await getAgentBrain(deps, bia.id, fx.org.id, fx.agent.id);
+    expect(brain.machines.map((machine) => machine.machineId)).toContain(machineId);
+    expect(brain.canManageAccounts).toBe(true);
+  });
+
+  test("a member's personal plan on the right hand defaults to the shared server host", async () => {
+    const { fx, deps, machineId, bia } = await world();
+    await fx.db.update(schema.machines).set({ kind: "host" }).where(eq(schema.machines.id, machineId));
+    const [lodi] = await fx.db
+      .insert(schema.agents)
+      .values({ orgId: fx.org.id, name: "Lodi", handle: "lodi", model: "claude-sonnet-5-5", builtin: "right_hand" })
+      .returning();
+    if (!lodi) throw new Error("no right hand");
+
+    const brain = await getAgentBrain(deps, bia.id, fx.org.id, lodi.id, "mine");
+    expect(brain.computer?.machineId).toBe(machineId);
+    expect(brain.canManageAccounts).toBe(true);
+  });
+
   test("admins see every computer with what it offers; a member can't create agents", async () => {
     const { fx, deps, machineId, bia, caio } = await world();
     const [mine] = await newAgentBrainMachines(deps, caio.id, fx.org.id);

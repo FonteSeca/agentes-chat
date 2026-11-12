@@ -96,8 +96,9 @@ const { machineAccounts, agents, machines, rightHandBrains, users } = schema;
  * Only the owner sees its email, renames it, picks it for an agent or signs
  * in to it again; the owner or the computer's pairer removes it (an admin
  * too, when the computer or the account has no person). The pairer adds
- * accounts to a computer; on one nobody paired (the Cloud's, a server's own),
- * any member does. Removing leaves a tombstone (`removing`) until the runner
+ * accounts to a personal computer; any member can add accounts on a shared
+ * workspace computer (the Cloud's managed computer or this server's host).
+ * Removing leaves a tombstone (`removing`) until the runner
  * has signed the account out and deleted its folder, now or when it is back.
  *
  * Usage (protocol 19): what the runner says about each plan's limits, during
@@ -173,6 +174,7 @@ export interface MachineAccountHubDeps extends MachineAccountDeps {
   hub: Pick<MachineCaller, "call" | "status">;
   /** A sign-in that failed on the computer is logged here (an error line is reported, ADR 0104). */
   log?: {
+    info?(message: string, data?: Record<string, unknown>): void;
     error(message: string, data?: Record<string, unknown>): void;
     warn(message: string, data?: Record<string, unknown>): void;
   };
@@ -962,12 +964,13 @@ export async function getListedAccount(db: Executor, orgId: string, machineId: s
 // ── Who may ─────────────────────────────────────────────────────────────────
 
 /**
- * Who adds accounts to a computer: the person who connected it (other
- * people's sign-ins on someone's own computer would need their consent, and
- * outlive it), or any member on one nobody did (the Cloud's, a server's own).
+ * Who adds accounts to a computer: any member on a workspace-owned shared
+ * computer (the Cloud's or this server's own), or the person who connected a
+ * personal computer. A host computer is pinned to the server owner for its
+ * lifecycle, but is shared by the workspace for AI sign-ins.
  */
-export const mayAddAccounts = (machine: Pick<MachineRow, "pairedByUserId">, userId: string) =>
-  machine.pairedByUserId === null || machine.pairedByUserId === userId;
+export const mayAddAccounts = (machine: Pick<MachineRow, "kind" | "pairedByUserId">, userId: string) =>
+  machine.kind === "host" || machine.pairedByUserId === null || machine.pairedByUserId === userId;
 
 /** A member and the machine of the organization. */
 async function memberMachine(db: Database, userId: string, orgId: string, machineId: string) {
@@ -1012,8 +1015,9 @@ async function ownSignIn(db: Database, userId: string, orgId: string, machineId:
 // ── The page ────────────────────────────────────────────────────────────────
 
 /**
- * `GET …/machines/{id}/accounts`: the person who connected it, an admin, or
- * anyone on a computer nobody connected. Emails only of the caller's own.
+ * `GET …/machines/{id}/accounts`: the person who connected a personal
+ * computer, an admin, or anyone on a workspace-owned shared computer. Emails
+ * only of the caller's own.
  * `canManage`: the caller adds accounts there, on a runner that knows them.
  */
 export async function getMachineAccounts(
@@ -1026,7 +1030,7 @@ export async function getMachineAccounts(
   const adds = mayAddAccounts(machine, userId);
   if (!adds && !can(membership, "configure")) {
     throw new ForbiddenError(
-      "Only an admin or the person who connected this computer can see its accounts",
+      "Only an admin or someone allowed to add accounts on this computer can see them",
       "machine.forbidden",
     );
   }
@@ -1112,6 +1116,19 @@ export async function beginAccountLogin(
   }
   const plan = planOf(provider);
   const { machine } = await memberMachine(deps.db, userId, orgId, machineId);
+  const accountFields = {
+    orgId,
+    userId,
+    machineId: machine.id,
+    machineKind: machine.kind,
+    accountKind: kind,
+    ...(provider ? { provider } : {}),
+    sharedComputer: machine.pairedByUserId === null,
+    pairedByCaller: machine.pairedByUserId === userId,
+    runnerProtocol: machine.protocol,
+    ...(accountId ? { existingAccount: true } : { existingAccount: false }),
+  };
+  deps.log?.info?.("AI account sign-in requested", accountFields);
   let existing: MachineAccountRow | null = null;
   if (accountId !== undefined) {
     existing = await getListedAccount(deps.db, orgId, machine.id, accountId);
@@ -1119,14 +1136,20 @@ export async function beginAccountLogin(
       throw new ValidationError("That account isn't on this computer", "account.invalid");
     }
     if (existing.createdBy !== userId) {
+      deps.log?.warn("AI account sign-in denied: account belongs to another member", {
+        ...accountFields,
+        reason: "account.not_owner",
+      });
       throw new ForbiddenError("Only the account's owner can sign in to it again", "account.not_owner");
     }
   } else if (!mayAddAccounts(machine, userId)) {
+    deps.log?.warn("AI account sign-in denied: computer belongs to another member", {
+      ...accountFields,
+      reason: "account.not_owner",
+    });
     throw new ForbiddenError("Only the person who connected this computer can add accounts to it", "account.not_owner");
   }
-  const protocol = await requireLive(
-    deps,
-    machine,
+  const requiredProtocol =
     kind === "cursor"
       ? CURSOR_PROTOCOL
       : kind === "antigravity"
@@ -1137,8 +1160,23 @@ export async function beginAccountLogin(
             ? OPENCODE_PROTOCOL
             : plan
               ? PLAN_KEYS_PROTOCOL
-              : ACCOUNTS_PROTOCOL,
-  );
+              : ACCOUNTS_PROTOCOL;
+  let protocol: number;
+  try {
+    protocol = await requireLive(deps, machine, requiredProtocol);
+  } catch (error) {
+    deps.log?.warn("AI account sign-in cannot reach a compatible computer", {
+      ...accountFields,
+      requiredProtocol,
+      reason: error instanceof ConflictError ? error.code : error instanceof Error ? error.name : "unknown",
+    });
+    throw error;
+  }
+  deps.log?.info?.("AI account sign-in accepted by computer", {
+    ...accountFields,
+    requiredProtocol,
+    sharedSignIn: protocol >= sharedSignInProtocol(kind) && sharedSignIn(kind, provider),
+  });
   // Once for every agent of its owner there, where the runner can (protocol 29; ChatGPT's 38, Gemini's 58).
   const shared = protocol >= sharedSignInProtocol(kind) && sharedSignIn(kind, provider);
   const again = accountId !== undefined;
@@ -1316,6 +1354,15 @@ export async function accountLoginStatus(
   if (state !== "done") {
     const code = isAccountLoginFailure(reply.code) ? reply.code : undefined;
     const message = code ? said(reply.message) : undefined;
+    deps.log?.warn("AI account sign-in ended without an account", {
+      orgId,
+      userId,
+      machineId: machine.id,
+      loginId: row.id,
+      accountKind: kindOf(row),
+      state,
+      ...(code ? { reason: code } : { reason: "runner_returned_no_failure_code" }),
+    });
     if (code && code !== "canceled") {
       const kind = kindOf(row);
       const fields = { orgId, userId, machineId: machine.id, accountKind: kind, code, message };
@@ -1337,12 +1384,38 @@ export async function accountLoginStatus(
   }
   const [info] = parseAccounts(reply.account ? [reply.account] : []);
   if (!info) {
+    deps.log?.warn("AI account sign-in completed without account details", {
+      orgId,
+      userId,
+      machineId: machine.id,
+      loginId: row.id,
+      accountKind: kindOf(row),
+      reason: "runner_account_missing",
+    });
     return { state: "failed", error: "The computer didn't say which account signed in." };
   }
-  if (info.id !== row.id) return { state: "failed", error: "The computer reported another account." };
+  if (info.id !== row.id) {
+    deps.log?.warn("AI account sign-in returned a different account id", {
+      orgId,
+      userId,
+      machineId: machine.id,
+      loginId: row.id,
+      accountKind: kindOf(row),
+      reason: "runner_account_id_mismatch",
+    });
+    return { state: "failed", error: "The computer reported another account." };
+  }
   const settled = await deps.db.transaction((tx) => settleAccount(tx, orgId, machine, info, true));
   forgetAgents(orgId, settled.released);
   if (settled.other) {
+    deps.log?.warn("AI account sign-in returned an account already owned elsewhere", {
+      orgId,
+      userId,
+      machineId: machine.id,
+      loginId: row.id,
+      accountKind: kindOf(row),
+      reason: "account.belongs_to_another_owner",
+    });
     if (settled.changed) await publishAccountsChanged(deps.pubsub, orgId, machine.id);
     const { email, duplicate } = settled.other;
     return {
@@ -1355,6 +1428,14 @@ export async function accountLoginStatus(
     };
   }
   if (settled.duplicate) {
+    deps.log?.warn("AI account sign-in returned a duplicate account", {
+      orgId,
+      userId,
+      machineId: machine.id,
+      loginId: row.id,
+      accountKind: kindOf(row),
+      reason: "account.duplicate",
+    });
     await removeOnComputer(deps, orgId, machine.id, [{ kind: info.kind, id: info.id }]);
     if (settled.changed) await publishAccountsChanged(deps.pubsub, orgId, machine.id);
     return {
@@ -1370,6 +1451,14 @@ export async function accountLoginStatus(
     return { state: "failed", error: "The account was removed from this computer." };
   }
   if (settled.changed) await publishAccountsChanged(deps.pubsub, orgId, machine.id);
+  deps.log?.info?.("AI account sign-in completed", {
+    orgId,
+    userId,
+    machineId: machine.id,
+    loginId: row.id,
+    accountKind: kindOf(row),
+    accountShared: info.shared === true,
+  });
   return { state, account: await accountViewOf(deps.db, orgId, settled.row, userId) };
 }
 
