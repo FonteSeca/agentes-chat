@@ -87,7 +87,7 @@ describe("agents it asked first: one pair row right before the reply, never insi
         at(live, [
           "if (asking && e.consult === asking)",
           '<AgentFace agentId={e.id} size={18} mode="idle" />',
-          '<AgentFace agentId={asking.to} size={18} mode="think" />',
+          '<AgentFace agentId={asking.to} size={18} mode={asking.yours || asking.wait ? "idle" : "think"} />',
         ]),
       ),
     ).toBe(true);
@@ -132,7 +132,7 @@ describe("agents it asked first: one pair row right before the reply, never insi
 describe("an exchange between the same two agents", () => {
   test("is one row on its first asking run's reply, and one conversation when opened", () => {
     expect(source("ConsultGroup.tsx")).toContain("groupsByRun(asExchanges(list.data ?? []))");
-    expect(source("ConsultGroup.tsx")).toContain("consultPair(items, now, askerId)");
+    expect(source("ConsultGroup.tsx")).toContain("consultPair(items, now, askerId,");
     expect(source("ChatScreen.tsx")).toContain("asExchanges(consultData)");
     expect(source("ConsultationScreen.tsx")).toContain("useExchangeConversation(");
   });
@@ -356,9 +356,11 @@ describe("an approval card's layout", () => {
     // A grouped request: its words and its buttons on one line while the words fit theirs, the buttons under the
     // words otherwise (the action line), its words whole and their code drawn as code.
     const item = fn("ApprovalGroupItem");
+    // A replaced request returns its one quiet line first; the line with buttons is the main return.
+    const live = item.slice(item.indexOf("<ApproveAlwaysInfo"));
     expect(
       ascending(
-        at(item, [
+        at(live, [
           "<View style={[ACT_LINE.row, styles.itemWrap]}>",
           "<View style={ACT_LINE.text}>",
           "<View style={styles.itemActs}>",
