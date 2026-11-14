@@ -83,9 +83,9 @@ const offline = {
 /**
  * Accounts of the computer brains on a connected computer (ADR 0041, ADR
  * 0059): an account is the person's who started its sign-in (through the
- * provider's own CLI on the computer). The person who connected a personal
- * computer adds accounts there; any member may add accounts on a shared
- * workspace computer; only an
+ * provider's own CLI on the computer). The person who connected the computer
+ * adds accounts there, or any member where its plans are shared (the
+ * workspace's own computer always, others by their switch); only an
  * account's owner sees its email, renames it, continues its sign-in or
  * signs in to it again; its owner or whoever connected the computer removes it.
  * Session + CSRF like the rest of `/api/app`.
@@ -108,7 +108,7 @@ export function machineAccountRoutes(deps: AppDeps) {
       tags,
       security,
       summary:
-        "The computer's Claude, ChatGPT and coding plan accounts (the person who connected a personal computer, or any member on a shared workspace computer)",
+        "The computer's Claude, ChatGPT and coding plan accounts (the person who connected it, an admin, or anyone where its plans are shared)",
       description:
         "Emails only of the caller's own accounts. Changes come as `machine.updated` org events with `accounts: true`.",
       request: { params: MachineParams },
@@ -118,7 +118,7 @@ export function machineAccountRoutes(deps: AppDeps) {
             accounts: z.array(MachineAccount),
             canManage: z.boolean().openapi({
               description:
-                "The caller may add accounts there (they connected a personal computer, or it is a shared workspace computer) and its runner knows accounts (protocol 13).",
+                "The caller adds accounts there (they connected it, or its plans are shared) and its runner knows accounts (protocol 13).",
             }),
             supported: z.boolean().openapi({ description: "Its runner knows accounts (protocol 13)." }),
           }),
@@ -140,7 +140,7 @@ export function machineAccountRoutes(deps: AppDeps) {
       security,
       summary: "Start signing in an account on the computer, through the provider's own CLI there",
       description:
-        "The account is the caller's from now on. The person who connected a personal computer adds accounts there; any member can add accounts on a shared workspace computer.",
+        "The account is the caller's from now on. The person who connected the computer adds accounts there, or anyone where its plans are shared.",
       request: {
         params: MachineParams,
         body: body(
@@ -178,16 +178,7 @@ export function machineAccountRoutes(deps: AppDeps) {
         limit: 10,
         windowMs: 15 * 60_000,
       });
-      if (!limit.allowed) {
-        deps.log?.warn("AI account sign-in rate-limited", {
-          orgId,
-          userId,
-          machineId,
-          accountKind: kind,
-          reason: "rate_limited",
-        });
-        return apiError(c, 429, "rate_limited", "Too many sign-ins started. Try again later.");
-      }
+      if (!limit.allowed) return apiError(c, 429, "rate_limited", "Too many sign-ins started. Try again later.");
       const login = await beginAccountLogin(withHub(), userId, orgId, machineId, kind, accountId, email, provider);
       return c.json(login, 201);
     },
@@ -320,7 +311,7 @@ export function machineAccountRoutes(deps: AppDeps) {
         ...errors,
       },
     }),
-    async (c) => c.json(await listAiAccounts({ db, log: deps.log }, c.get("user").id, c.req.valid("param").orgId), 200),
+    async (c) => c.json(await listAiAccounts({ db }, c.get("user").id, c.req.valid("param").orgId), 200),
   );
 
   app.openapi(

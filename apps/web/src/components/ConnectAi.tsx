@@ -582,29 +582,6 @@ function ConnectAiDialog({
   // By the AI status, as its "Sem IA" chip: an agent on a plan whose sign-in is gone has none either.
   const noAi = (id: string) => !linked[id] && (aiStateOf(status.data, id) ?? "no_ai") === "no_ai";
   const accounts = useAiAccounts(org.id);
-  const modalOpenLogged = useRef(false);
-  useEffect(() => {
-    if (modalOpenLogged.current) return;
-    modalOpenLogged.current = true;
-    console.info("[agentes.chat] Connect AI modal opened", {
-      orgId: org.id,
-      entry: request.plan ? "plan" : request.apiKey ? "api_key" : (request.intent ?? "general"),
-      hasAgent: Boolean(request.agentId),
-      agentCount: request.agentIds?.length ?? 0,
-      forNewAgent: request.forNewAgent === true,
-      accountsQuery: accounts.isPending ? "loading" : accounts.isError ? "error" : "ready",
-      computers: (accounts.data?.computers ?? []).map((computer) => ({
-        machineId: computer.machineId,
-        online: computer.online,
-        mine: computer.mine,
-        canAdd: computer.canAdd,
-        brains: computer.brains,
-        unavailable: Object.keys(computer.off),
-      })),
-    });
-    // Fetch afresh on each opening so the server's account-computer diagnostic matches this modal attempt.
-    void accounts.refetch();
-  }, [accounts.data, accounts.isError, accounts.isPending, accounts.refetch, org.id, request]);
   const setOf = (c: AiChoice) =>
     c === "key"
       ? []
