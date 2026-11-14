@@ -14,8 +14,9 @@ import { useDeviceMutation } from "./queries";
 
 /**
  * On a computer's page, what bringing devices adds: who can use it (its owner changes it, an admin narrows it), whether
- * every member may add their AI plans there, the workspace's mark for admins, the line about whose computer it is, the phones plugged into it, and on a Mac the
- * iPhones on its Wi-Fi that trust it, each with Use over Wi-Fi (for who may manage it).
+ * every member may add their AI plans there, the workspace's mark for admins, the line about whose computer it is, the
+ * phones plugged into it, and on a Mac the iPhones on its Wi-Fi that trust it, each with Use over Wi-Fi (for who may
+ * manage it).
  */
 export function ComputerSection({ device: d, name }: { device: ComputerDevice; name: string }) {
   const { t } = useTranslation();
