@@ -388,6 +388,7 @@ function ComputerPage({ machineId }: { machineId: string }) {
             hint={t("devices.who.computerHint")}
             onChange={(audience: DeviceAudience) => save({ id: d.id, audience })}
           />
+          {/* On a computer someone connected, its owner turns this on; an admin may only turn it off. */}
           <PrefRow
             id="dv-pc-ai-accounts"
             icon="key"
@@ -397,7 +398,11 @@ function ComputerPage({ machineId }: { machineId: string }) {
               <Switch
                 id="dv-pc-ai-accounts-switch"
                 checked={d.aiAccountsShared}
-                disabled={!d.mayManage || update.isPending}
+                disabled={
+                  !d.mayManage ||
+                  update.isPending ||
+                  (!owner && d.machineKind === "connected" && d.ownerUserId !== null && !d.aiAccountsShared)
+                }
                 onCheckedChange={(on) => save({ id: d.id, aiAccountsShared: on })}
               />
             }
