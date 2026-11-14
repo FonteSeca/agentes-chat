@@ -16,6 +16,7 @@ import { AUDIENCE_MODES, type AudienceMode } from "./audience";
 import { recordAudit } from "./audit";
 import { ForbiddenError, NotFoundError, ValidationError } from "./errors";
 import { publishOrgEvent } from "./events";
+import { aiAccountsSharedOn } from "./machine-accounts";
 import type { MachineCaller, MachineHub } from "./machine-hub";
 import {
   cleanMachineName,
@@ -429,7 +430,7 @@ export async function listDevices(
       memoryGb: m.size?.memoryGb ?? null,
       ownerUserId: m.pairedByUserId,
       belongsToWorkspace: m.belongsToWorkspace,
-      aiAccountsShared: m.aiAccountsShared,
+      aiAccountsShared: aiAccountsSharedOn(m),
       spill: { own: m.spillOwn, others: m.spillOthers },
       systemMode: m.executors?.mode === "system",
       audience: rule.audience,
@@ -550,6 +551,9 @@ export interface ComputerDeviceInput {
  * `PATCH …/devices/computers/{machineId}`: its owner changes anything; an admin renames it, marks it the workspace's,
  * and narrows its rule (widens it only on the workspace's own devices). Never the workspace's computer. Spill-over is
  * its owner's to turn on (other people's agents would think on their plan's computer); an admin only turns it off.
+ * So is letting every member add their AI plans on a computer someone connected: other people's sign-ins would land on
+ * hardware that person controls (a system-mode server and one marked the workspace's included). An admin turns it on
+ * only on a server's own computer or one nobody connected.
  */
 export async function updateComputerDevice(
   deps: { db: Database; pubsub?: PubSub },
@@ -580,7 +584,15 @@ export async function updateComputerDevice(
     Object.assign(set, { audienceMode: next.mode, audienceUserIds: next.userIds, audienceRoleIds: next.roleIds });
   }
   if (input.belongsToWorkspace !== undefined) set.belongsToWorkspace = input.belongsToWorkspace;
-  if (input.aiAccountsShared !== undefined) set.aiAccountsShared = input.aiAccountsShared;
+  if (input.aiAccountsShared !== undefined) {
+    if (input.aiAccountsShared && !owner && machine.kind === "connected" && machine.pairedByUserId !== null) {
+      throw new ForbiddenError(
+        "Only the person who connected this computer can let members add AI plans to it",
+        "device.ai_accounts_owner_only",
+      );
+    }
+    set.aiAccountsShared = input.aiAccountsShared;
+  }
   for (const [key, column] of [
     ["own", "spillOwn"],
     ["others", "spillOthers"],
@@ -984,14 +996,14 @@ export async function syncMachinePhones(
 
 /**
  * A member leaves (`removeMember`): the computers they connected that an admin marked the workspace's stay, now
- * nobody's (an Only-them rule then reads as everyone), and so do their phones on those; their other phones are
- * forgotten. Their other computers go with them (`personalMachines`).
+ * nobody's (an Only-them rule then reads as everyone, and every member adds plans there), and so do their phones on
+ * those; their other phones are forgotten. Their other computers go with them (`personalMachines`).
  */
 export async function releaseLeaverDevices(tx: Executor, orgId: string, userId: string) {
   const now = new Date();
   const kept = await tx
     .update(machines)
-    .set({ pairedByUserId: null, updatedAt: now })
+    .set({ pairedByUserId: null, aiAccountsShared: true, updatedAt: now })
     .where(
       and(
         eq(machines.orgId, orgId),

@@ -398,7 +398,6 @@ export async function issueManagedMachine(
       .values({
         orgId,
         kind: "managed",
-        aiAccountsShared: true,
         name: name || managedMachineName(org.name, emailLocale(owner?.locale), personal),
         audienceMode: "everyone",
         createdAt: now,
@@ -407,13 +406,7 @@ export async function issueManagedMachine(
       .onConflictDoUpdate({
         target: machines.orgId,
         targetWhere: sql`${machines.kind} = 'managed'`,
-        set: {
-          aiAccountsShared: true,
-          deletedAt: null,
-          previousAgentIds: [],
-          ...(name ? { name } : {}),
-          updatedAt: now,
-        },
+        set: { deletedAt: null, previousAgentIds: [], ...(name ? { name } : {}), updatedAt: now },
       })
       .returning({ id: machines.id, name: machines.name });
     if (!row) throw new Error("managed machine upsert returned nothing");

@@ -99,6 +99,7 @@ async function workspace() {
     admin(`/api/app/organizations/${seeded.orgId}${path}`, init);
   return {
     ...seeded,
+    owner,
     api,
     asAdmin,
     ownerId: await userId("owner@example.com"),
@@ -340,31 +341,45 @@ test("a computer nobody connected: anyone signs in, the account is theirs from t
   expect((await api(`${base}/account-logins`, { json: { kind: "claude_code", email: "x" } })).status).toBe(400);
 });
 
-test("the server host is shared even though its pinned owner is recorded as the pairer", async () => {
-  const { api, asAdmin, ownerId, adminId } = await workspace();
+test("the server's own computer: a member adds a plan while an admin shares it, and is refused once it's off", async () => {
+  const { owner, api, asAdmin, orgId, ownerId } = await workspace();
+  const member = browser(t);
+  await signUp(member, "caio@example.com");
+  await joinByInvitation(t, owner, orgId, "caio@example.com", { role: "member", as: member });
+  const asMember = (path: string, init?: Parameters<typeof member>[1]) =>
+    member(`/api/app/organizations/${orgId}${path}`, init);
   const box = await pairComputer(t, api, { ...RUNNER, exec: true }, { name: "server" });
   await t.db
     .update(schema.machines)
-    .set({ kind: "host", pairedByUserId: ownerId, aiAccountsShared: true })
+    .set({ kind: "host", pairedByUserId: ownerId })
     .where(eq(schema.machines.id, box.machineId));
   const runner = fakeRunner();
   await runner.hello(box.token);
   const base = `/machines/${box.machineId}`;
+  const share = (on: boolean) =>
+    asAdmin(`/devices/computers/${box.machineId}`, { method: "PATCH", json: { aiAccountsShared: on } });
 
-  const page = await asAdmin(`${base}/accounts`);
+  expect((await asMember(`${base}/accounts`)).status).toBe(403);
+  expect((await share(true)).status).toBe(200);
+  const page = await asMember(`${base}/accounts`);
   expect(page.status).toBe(200);
   expect(await page.json()).toMatchObject({ canManage: true, supported: true });
-
-  const listed = await asAdmin("/ai-accounts");
-  expect(listed.status).toBe(200);
+  const listed = await asMember("/ai-accounts");
   expect(await listed.json()).toMatchObject({
     computers: [{ machineId: box.machineId, canAdd: true, mine: false, online: true }],
   });
-
-  const begun = await asAdmin(`${base}/account-logins`, { json: { kind: "claude_code" } });
+  const begun = await asMember(`${base}/account-logins`, { json: { kind: "claude_code" } });
   expect(begun.status).toBe(201);
   const login = (await begun.json()) as { loginId: string };
-  expect(await accountRow(login.loginId)).toMatchObject({ createdBy: adminId, status: "signing_in" });
+  expect(await accountRow(login.loginId)).toMatchObject({
+    createdBy: await userId("caio@example.com"),
+    status: "signing_in",
+  });
+
+  expect((await share(false)).status).toBe(200);
+  const refused = await asMember(`${base}/account-logins`, { json: { kind: "claude_code" } });
+  expect(refused.status).toBe(403);
+  expect(await code(refused)).toBe("account.not_owner");
 });
 
 test("the OpenAPI document lists the account routes", async () => {

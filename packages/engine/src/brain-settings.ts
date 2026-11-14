@@ -522,7 +522,7 @@ async function brainAccounts(
   userId: string,
   orgId: string,
   agent: Pick<Agent, "ownerUserId" | "brainAccountId" | "builtin">,
-  machine: Pick<MachineRow, "id" | "protocol" | "pairedByUserId" | "aiAccountsShared"> | null,
+  machine: Pick<MachineRow, "id" | "protocol" | "kind" | "aiAccountsShared" | "pairedByUserId"> | null,
 ): Promise<BrainAccounts> {
   if (!machine) return NO_ACCOUNTS;
   const supported = machine.protocol >= ACCOUNTS_PROTOCOL;
@@ -541,7 +541,6 @@ async function brainAccounts(
 
 interface BrainDeps {
   db: Database;
-  log?: { info(message: string, data?: Record<string, unknown>): void };
 }
 
 /**
@@ -564,7 +563,8 @@ async function agentBrainAccess(db: Database, userId: string, orgId: string, age
  * The team's right hand as its AI settings see it (ADR 0137 §1, amended 2026-11-04): it is on no computer and its owner
  * is the workspace's, so on a plan (`account`, the one asked for else its own) the computer is that account's and the
  * plan is its owner's. With none yet, the computer a plan would sign in on for the caller: the workspace's own, else
- * the first one the caller connected, and the plan would be the caller's. Every other agent is itself.
+ * the server's own, else the caller's own, else the first one shared with every member (`aiAccountsSharedOn`), and the
+ * plan would be the caller's. Every other agent is itself.
  */
 async function settingsAgent(db: Database, agent: Agent, userId: string, account?: unknown): Promise<Agent> {
   if (!isRightHand(agent)) return agent;
@@ -583,10 +583,15 @@ async function settingsAgent(db: Database, agent: Agent, userId: string, account
       and(
         eq(schema.machines.orgId, agent.orgId),
         isNull(schema.machines.deletedAt),
-        sql`(${schema.machines.aiAccountsShared} or ${schema.machines.pairedByUserId} = ${userId})`,
+        sql`(${schema.machines.kind} = 'managed' or ${schema.machines.aiAccountsShared} or ${schema.machines.pairedByUserId} = ${userId})`,
       ),
     )
-    .orderBy(sql`${schema.machines.kind} = 'managed' desc`, schema.machines.createdAt)
+    .orderBy(
+      sql`${schema.machines.kind} = 'managed' desc`,
+      sql`${schema.machines.kind} = 'host' desc`,
+      sql`${schema.machines.pairedByUserId} = ${userId} desc nulls last`,
+      schema.machines.createdAt,
+    )
     .limit(1);
   return { ...agent, machineId: machine?.id ?? null, ownerUserId: userId };
 }
@@ -1919,7 +1924,7 @@ export async function listAiAccounts(deps: BrainDeps, userId: string, orgId: str
         .map((a) => ({ ...a, machineId: m.id, computer: m.name })),
     ),
   );
-  const view: AiAccountsView = {
+  return {
     accounts: accounts.flat(),
     computers: rows.map((m) => {
       const options = brainOptions(m);
@@ -1953,26 +1958,6 @@ export async function listAiAccounts(deps: BrainDeps, userId: string, orgId: str
       };
     }),
   };
-  deps.log?.info("AI account computers listed", {
-    orgId,
-    userId,
-    computers: rows.map((machine) => ({
-      machineId: machine.id,
-      kind: machine.kind,
-      online: machineOnline(machine),
-      sharedComputer: machine.aiAccountsShared,
-      pairedByCaller: machine.pairedByUserId === userId,
-      runnerProtocol: machine.protocol,
-      accountsSupported: machine.protocol >= ACCOUNTS_PROTOCOL,
-      canAdd: mayAddAccounts(machine, userId) && machine.protocol >= ACCOUNTS_PROTOCOL,
-      ...(!mayAddAccounts(machine, userId)
-        ? { unavailableReason: "paired_to_another_member" }
-        : machine.protocol < ACCOUNTS_PROTOCOL
-          ? { unavailableReason: "runner_accounts_protocol_too_old" }
-          : {}),
-    })),
-  });
-  return view;
 }
 
 /** The CLIs' own sign-ins a computer reported (see `AiComputer.own`). */
