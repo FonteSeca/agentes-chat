@@ -10,7 +10,7 @@
 
 ADR 0041 put Claude and ChatGPT subscriptions on a connected computer, one folder per account, managed only by the person who paired the computer. Three things changed:
 
-- **Workspace-owned shared computers.** A Cloud workspace's machine has no pairer; a self-hosted server's `host` computer is pinned to the server owner for lifecycle control. Either way, every member needs to bring their own plan to it.
+- **Computers without a person.** A Cloud workspace's machine and a self-hosted server's own computer have no pairer, yet every member wants to bring their own plan to them.
 - **Several seats per person.** A team plan gives one person several seats. With labels such as "Claude Max · Max" nobody could tell the rows apart, or whose account served which agent.
 - **Sharing a personal plan.** ADR 0032 warned once, when a plan brain was chosen, and after that the agent answered whoever its audience allowed, on one person's subscription.
 
@@ -23,10 +23,12 @@ People also asked for more providers than Anthropic and OpenAI (DeepSeek, Kimi, 
 - The owner is bound when the sign-in **starts** (the row is written then, with the caller as owner), never inferred later from who polled first. Only the person who started a sign-in may send its code, check it or cancel it.
 - Accounts the desktop app reports with no sign-in started from the web belong to the computer's pairer. On a computer with no pairer they have no owner: nobody assigns them, and the pairer or an admin can remove them.
 - Only the owner sees the account's email, renames it, assigns it or signs in to it again. The computer's pairer can disconnect any account on that computer; on a computer with no pairer, so can admins.
-- **Who adds:** any member on a workspace-owned shared computer (the Cloud machine or a self-hosted server's `host` computer), including when the server's pinned owner is recorded as its pairer for lifecycle control. On a personal computer only its pairer adds accounts, as before: other people's sign-ins on someone's laptop raise a consent problem, and they would outlive the computer if its token were revoked.
+- **Who adds:** any member on a computer with no pairer (the Cloud machine, the server's own computer). On a personal computer only its pairer adds accounts, as before: other people's sign-ins on someone's laptop raise a consent problem, and they would outlive the computer if its token were revoked.
 - A person who leaves the organization or deletes their account has their accounts signed out and removed from every computer, with a tombstone until the runner confirms. They are never inherited by anyone.
 
 *Amended 2026-10-30 (ADR 0088):* a deleted workspace's accounts leave its computers before it goes. At its purge every account on them becomes a tombstone, and the purge waits up to 60 seconds for its online computers whose runner removes accounts to sign them out. An offline computer keeps them, and its token dies with the workspace. A deleted account's tombstones are announced to the computers of every workspace it was in, those that close with it included. A person who leaves also takes the computers they connected there, unless in system mode (ADR 0088 §11).
+
+*Amended 2026-11-14:* who adds is a switch on each computer, "Let workspace members connect AI plans" (`machines.ai_accounts_shared`), because a self-hosted server's own computer records the server owner as its pairer, so no other member could bring a plan to it. Its pairer always adds accounts there. Every member adds them on the Cloud's managed computer whatever the switch says, and where the switch is on. It starts on for a server's own computer and for a computer nobody connected, a leaver's kept computer included, and off for the rest. On a computer someone connected (a system-mode server or one marked the workspace's included) only that person turns it on (`device.ai_accounts_owner_only`): their consent is the reason above. An admin may turn it off anywhere, and on for a server's own computer or one nobody connected. Turning it off removes no account already there.
 
 ### 2. One account thinks for one agent
 
